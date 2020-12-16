@@ -1,97 +1,156 @@
 import tkinter as tk
+from PIL import ImageTk, Image
+import pygsheets
+import csv
+import pandas as pd
 
-APP_TITLE = "台大附近吃什麼？"
-# 設定視窗大小
-APP_WIDTH = 1200
-APP_HEIGHT = 800
-# 設定物件起始座標位置
-APP_XPOS = APP_WIDTH/2
-APP_YPOS = APP_HEIGHT/2
+
+# 設定按鈕事件
+def on_click():
+    global current_image_number, img, my_image, xpos, ypos
+    # 儲存已評分餐廳資訊
+    item = [str(restaurant[current_image_number][0]), xpos, ypos]
+    data.append(item)
+    # 重新設定座標
+    xpos = 0
+    ypos = 0
+    # 如果已經是最後一家，就顯示結果
+    if current_image_number == image_num-1:
+        upload_data(data)
+        # 刪除畫面上現有的物件
+        my_canvas.delete("progress")
+        my_canvas.delete(my_image)
+        # 顯示評價進度
+        current_image_number += 1
+        progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+        # 因為要顯示結果了，不需要再知道店名
+        res_label.destroy()
+        # 顯示一下結果
+        show_result(read_data())
+
+    # 如果還不是最後一家，就繼續進行評分
+    else:
+        current_image_number += 1
+        # 刪除畫面上現有的物件
+        my_canvas.delete("progress")
+        my_canvas.delete(my_image)
+        # 顯示評價進度
+        progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+        res_label.config(font=("Purisa", 20), text="目前評分餐廳：" + restaurant[current_image_number][1])
+        img = tk.PhotoImage(file=images[current_image_number])
+        my_image = my_canvas.create_image(455, 265, anchor=tk.NW, image=img)
+
+
+# 設定一下拖曳事件
+def move(event):
+    global img, my_image, xpos, ypos
+    img = tk.PhotoImage(file=images[current_image_number])
+    my_image = my_canvas.create_image(event.x, event.y, image=img)
+    # 儲存一下物件最後的座標
+    xpos = event.x
+    ypos = event.y
+
+
+# 設定一下請求資料庫的方式
+def connect_db():
+    gc = pygsheets.authorize(service_file='ref/client_secret.json')
+    sh = gc.open('NTU_rating')
+    wks = sh[0]
+    wks = sh.worksheet_by_title('data')
+    cells = wks.get_all_values(include_tailing_empty_rows=False, include_tailing_empty=False, returnas='matrix')
+    return wks, cells
+
+
+# upload data to Google spreadsheet
+def upload_data(d):
+    columns = ["index", "x", "y"]
+    last_row = len(connect_db()[1])
+    wks = connect_db()[0]
+
+    if len(wks.get_as_df()) == 0:
+        wks.insert_rows(row=0, number=1, values=columns)
+        wks.insert_rows(last_row, number=1, values=data)
+    else:
+        wks.insert_rows(last_row, number=1, values=data)
+
+
+# fetch data from Google spreadsheet
+def read_data():
+    wks = connect_db()[0]
+    df = wks.get_as_df()
+    # 算一下平均
+    df = df.groupby(['index']).mean().reset_index()
+    return df
+
+
+# 顯示結果
+def show_result(s):
+    for index, line in s.iterrows():
+        res_img_path = images[int(line["index"])-1]
+        res_img = Image.open(res_img_path).resize((50, 50))
+        res_img.load()
+        photoimg = ImageTk.PhotoImage(res_img)
+        images.append(photoimg)  # debug用，沒什麼function
+        my_canvas.create_image(int(line["x"]), int(line["y"]), anchor=tk.NW, image=photoimg)
+
+
 # 設定圖檔路徑
 IMAGE_PATH = "ref/img/"
+image_num = 20
+images = ["".join([IMAGE_PATH, str(n), ".png"]) for n in range(1, image_num+1)]
+# 讀取餐廳基本資訊
+with open("ref/restaurant_list.csv") as f:
+    next(f)
+    r = csv.reader(f)
+    restaurant = [tuple(line) for line in r]
+# 儲存餐廳位置的list
+data = []
 
+# 圖片座標
+xpos = 0
+ypos = 0
 
-class CreateCanvasObject(object):
-    def __init__(self, canvas, image_name, xpos, ypos):
-        self.canvas = canvas
-        self.image_name = image_name
-        self.xpos, self.ypos = xpos, ypos
+# 介面基本設定
+root = tk.Tk()
+root.title("台大附近吃什麼？")
+root.geometry("1080x720")
 
-        self.tk_image = tk.PhotoImage(
-            file="{}{}".format(IMAGE_PATH, image_name))
-        self.image_obj = canvas.create_image(
-            xpos, ypos, image=self.tk_image)
+w = 1080
+h = 720
+x = w / 2
+y = h / 2
+current_image_number = 0
 
-        # function to be called when mouse is clicked
-        def printcoords(event):
-            # outputting x and y coords to console
-            print("x:{} y:{}".format(event.x, event.y))
+# 畫出視窗
+my_canvas = tk.Canvas(root, width=w, height=h, bg="white")
+my_canvas.pack(pady=20)
 
-        canvas.tag_bind(self.image_obj, '<Button1-Motion>', self.move)
-        canvas.tag_bind(self.image_obj, '<ButtonRelease-1>', self.release)
-        canvas.tag_bind(self.image_obj, '<ButtonRelease-1>', printcoords)
+# 畫出座標軸及文字
+my_canvas.create_line(100, 360, 980, 360, fill="gray", width=5)
+my_canvas.create_line(540, 100, 540, 620, fill="gray", width=5)
+my_canvas.create_text(50, 360, fill="Gray", font=("Purisa", 30), text="難吃")
+my_canvas.create_text(1030, 360, fill="Gray", font=("Purisa", 30), text="好吃")
+my_canvas.create_text(540, 50, fill="Gray", font=("Purisa", 30), text="健康")
+my_canvas.create_text(540, 680, fill="Gray", font=("Purisa", 30), text="不健康")
+img = tk.PhotoImage(file=images[0])
+my_image = my_canvas.create_image(455, 265, anchor=tk.NW, image=img)
 
-        self.move_flag = False
+# create buttons
+button_skip = tk.Button(root, text="SKIP", command=on_click)
+button_skip.pack(fill="both", expand=True, side='left', ipadx=50, padx=20)
+button_save = tk.Button(root, text="SUBMIT", command=on_click)
+button_save.pack(fill="both", expand=True, side='left', ipadx=50, padx=20)
+button_quit = tk.Button(root, text="QUIT", command=root.destroy)  # 之後記得再新增一個直接show出結果的button
+button_quit.pack(fill="both", expand=True, side='left', ipadx=50, padx=20)
 
-    def move(self, event):
-        if self.move_flag:
-            new_xpos, new_ypos = event.x, event.y
+# create labels
+progress_label = tk.Label(root, text="", fg="red")
+progress_label.pack(fill="both", expand=True, side='left', ipadx=50, padx=20)
+res_label = tk.Label(root, text="", fg="black")
+res_label.pack(fill="both", expand=True, side='left', ipadx=50, padx=20)
+progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+res_label.config(font=("Purisa", 20), text="目前評分餐廳：" + restaurant[current_image_number][1])
 
-            self.canvas.move(self.image_obj,
-                             new_xpos - self.mouse_xpos, new_ypos - self.mouse_ypos)
-
-            self.mouse_xpos = new_xpos
-            self.mouse_ypos = new_ypos
-
-        else:
-            self.move_flag = True
-            self.canvas.tag_raise(self.image_obj)
-            self.mouse_xpos = event.x
-            self.mouse_ypos = event.y
-
-    def release(self, event):
-        self.move_flag = False
-
-
-class Application(tk.Frame):
-
-    def __init__(self, master):
-        self.close = None
-        self.master = master
-        self.master.protocol("WM_DELETE_WINDOW", self.close)
-        tk.Frame.__init__(self, master)
-
-        self.canvas = tk.Canvas(self, width=APP_WIDTH, height=APP_HEIGHT, bg="white")
-        self.canvas.pack(fill="both", expand=True)
-        self.canvas.create_line(100, 400, 1100, 400, fill="gray", width=5)
-        self.canvas.create_line(600, 100, 600, 700, fill="gray", width=5)
-        self.canvas.create_text(50, 400, fill="Gray", font=("Purisa", 30), text="難吃")
-        self.canvas.create_text(1150, 400, fill="Gray", font=("Purisa", 30), text="好吃")
-        self.canvas.create_text(600, 50, fill="Gray", font=("Purisa", 30), text="健康")
-        self.canvas.create_text(600, 750, fill="Gray", font=("Purisa", 30), text="不健康")
-        self.image_1 = CreateCanvasObject(self.canvas, "1.png", 520, 360)
-
-        # self.previous = Button(self, text="前一個")
-        # self.previous.pack(side=BOTTOM, ipadx=20, padx=30)
-
-        self.next = tk.Button(self.canvas, text="新增下一個")
-        # self.next.pack(side="bottom", ipadx=20, padx=30)
-
-        self.quitBtn = tk.Button(self.canvas, text="quit", fg="red", command=self.master.destroy)
-        # self.quitBtn.pack(side="bottom", ipadx=20, padx=30)
-
-        self.next.place(rely=1.0, relx=1.0, x=-100, y=0, anchor=tk.SE)
-        self.quitBtn.place(rely=1.0, relx=1.0, x=-40, y=0, anchor=tk.SE)
-
-
-def main():
-    root = tk.Tk()
-    root.title(APP_TITLE)
-    root.geometry("1200x800")
-    # root.geometry("+{}+{}".format(APP_XPOS, APP_YPOS))
-    app = Application(root).pack(fill='both', expand=True)
-    root.mainloop()
-
-
-if __name__ == '__main__':
-    main()
+# 套用一下拖曳事件
+my_canvas.bind("<B1-Motion>", move)
+root.mainloop()
