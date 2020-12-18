@@ -1,47 +1,45 @@
 import tkinter as tk
+import tkinter.messagebox as tkmb
 from PIL import ImageTk, Image
 import pygsheets
 import csv
+
 import pandas as pd
 
 
 # 設定按鈕事件
 def on_click():
     global current_image_number, img, my_image, xpos, ypos
-    # 儲存已評分餐廳資訊
-    item = [str(restaurant[current_image_number][0]), xpos, ypos]
-    data.append(item)
-    # 重新設定座標
-    xpos = 0
-    ypos = 0
-    # 如果已經是最後一家，就顯示結果
-    if current_image_number == IMAGE_NUM-1:
-        # upload_data(data)
-        # 刪除畫面上現有的物件
-        my_canvas.delete("progress")
-        my_canvas.delete(my_image)
-        # 顯示評價進度
-        current_image_number += 1
-        progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
-        # 因為要顯示結果了，不需要再知道店名
-        res_label.destroy()
-        # 顯示一下結果
-        show_result(read_data())
-        # my_canvas.destroy()
-        # new_can()
 
-    # 如果還不是最後一家，就繼續進行評分
+    if current_image_number <= IMAGE_NUM-1:
+        # 儲存已評分餐廳資訊
+        item = [str(restaurant[current_image_number][0]), xpos, ypos]
+        data.append(item)
+        # 重新設定座標
+        xpos = 0
+        ypos = 0
+        # 如果已經是最後一家，就顯示結果
+        if current_image_number == IMAGE_NUM-1:
+            # upload_data(data)
+
+            # 顯示一下結果
+            show_result(read_data())
+            # my_canvas.destroy()
+            # new_can()
+
+        # 如果還不是最後一家，就繼續進行評分
+        else:
+            current_image_number += 1
+            # 刪除畫面上現有的物件
+            my_canvas.delete("progress")
+            my_canvas.delete(my_image)
+            # 顯示評價進度
+            progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+            res_label.config(font=("Purisa", 20), text="目前評分餐廳：" + restaurant[current_image_number][1])
+            img = tk.PhotoImage(file=images[current_image_number])
+            my_image = my_canvas.create_image(INIT_X-90, INIT_Y-90, anchor=tk.NW, image=img)
     else:
-        current_image_number += 1
-        # 刪除畫面上現有的物件
-        my_canvas.delete("progress")
-        my_canvas.delete(my_image)
-        # 顯示評價進度
-        progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
-        res_label.config(font=("Purisa", 20), text="目前評分餐廳：" + restaurant[current_image_number][1])
-        img = tk.PhotoImage(file=images[current_image_number])
-        my_image = my_canvas.create_image(INIT_X-90, INIT_Y-90, anchor=tk.NW, image=img)
-
+        show_message_finish()
 
 # 設定一下拖曳事件
 def move(event):
@@ -89,6 +87,15 @@ def read_data():
 # 顯示結果
 def show_result(s):
     for index, line in s.iterrows():
+        # 刪除畫面上現有的物件
+        my_canvas.delete("progress")
+        my_canvas.delete(my_image)
+        # 因為顯示結果了，店名跟評分進度都不需要
+        progress_label.destroy()
+        res_label.destroy()
+        # 把結果畫上去
+        res_final_label = tk.Label(my_canvas, font=("Purisa", 20), text="最終結果", fg="red")
+        res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
         res_img_path = images[int(line["index"])-1]
         res_img = Image.open(res_img_path).resize((75, 75))
         res_img.load()
@@ -100,22 +107,39 @@ def show_result(s):
 # 直接看結果的按鈕
 def show_res_btn():
     global current_image_number
-    current_image_number = IMAGE_NUM-1
-    # 刪除畫面上現有的物件
-    my_canvas.delete("progress")
-    my_canvas.delete(my_image)
-    # 顯示評價進度
-    current_image_number += 1
-    progress_label.config(font=("Purisa", 20), text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
-    # 因為要顯示結果了，不需要再知道店名
-    res_label.destroy()
-    # 顯示一下結果
-    show_result(read_data())
+    if current_image_number <= IMAGE_NUM-1:
+        current_image_number = IMAGE_NUM-1
+        # 刪除畫面上現有的物件
+        my_canvas.delete("progress")
+        my_canvas.delete(my_image)
+        # 顯示評價進度
+        current_image_number += 1
+        # 因為直接顯示結果了，店名跟評分進度都不需要
+        progress_label.destroy()
+        res_label.destroy()
+        res_final_label = tk.Label(my_canvas,font=("Purisa", 20), text="最終結果", fg="red")
+        res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
+        # 顯示一下結果
+        show_result(read_data())
+    else:
+        show_message_already_show_res()
 
 
-def new_can():
-    first_canvas = tk.Canvas(root, width=w, height=h, bg="white")
-    first_canvas.pack(pady=20)
+def show_message_finish():
+    info_message = "所有餐廳已完成評分"
+    # info message box
+    tkmb.showinfo("Output", info_message)
+
+
+def show_message_already_show_res():
+    info_message = "已顯示最終結果"
+    # info message box
+    tkmb.showinfo("Output", info_message)
+
+
+# def new_can():
+#     first_canvas = tk.Canvas(root, width=w, height=h, bg="white")
+#     first_canvas.pack(pady=20)
 
 
 # 設定圖檔路徑
