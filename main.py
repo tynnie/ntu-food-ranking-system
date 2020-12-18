@@ -1,10 +1,10 @@
 import tkinter as tk
 import tkinter.messagebox as tkmb
+import tkinter.ttk as ttk
+import time
 from PIL import ImageTk, Image
 import pygsheets
 import csv
-
-import pandas as pd
 
 
 # 設定按鈕事件
@@ -18,14 +18,12 @@ def on_click():
         # 重新設定座標
         xpos = 0
         ypos = 0
-        # 如果已經是最後一家，就顯示結果
+        # 如果已經是最後一家，就上傳此次評分紀錄以及顯示結果
         if current_image_number == IMAGE_NUM-1:
             # upload_data(data)
-
             # 顯示一下結果
-            show_result(read_data())
-            # my_canvas.destroy()
-            # new_can()
+            show_result()
+
 
         # 如果還不是最後一家，就繼續進行評分
         else:
@@ -77,6 +75,7 @@ def upload_data(d):
 
 # fetch data from Google spreadsheet
 def read_data():
+    progress_bar_running()
     wks = connect_db()[0]
     df = wks.get_as_df()
     # 算一下平均
@@ -85,14 +84,18 @@ def read_data():
 
 
 # 顯示結果
-def show_result(s):
-    for index, line in s.iterrows():
-        # 刪除畫面上現有的物件
-        my_canvas.delete("progress")
-        my_canvas.delete(my_image)
-        # 因為顯示結果了，店名跟評分進度都不需要
-        progress_label.destroy()
-        res_label.destroy()
+def show_result():
+    global progress_bar, res_uploading_label
+    # 刪除畫面上現有的物件
+    my_canvas.delete("progress")
+    my_canvas.delete(my_image)
+    # 因為顯示結果了，店名跟評分進度都不需要
+    progress_label.destroy()
+    res_label.destroy()
+    df = read_data()
+    progress_bar.destroy()
+    res_uploading_label.destroy()
+    for index, line in df.iterrows():
         # 把結果畫上去
         res_final_label = tk.Label(my_canvas, font=("Purisa", 20), text="最終結果", fg="red")
         res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
@@ -106,7 +109,7 @@ def show_result(s):
 
 # 直接看結果的按鈕
 def show_res_btn():
-    global current_image_number
+    global current_image_number, progress_bar, res_uploading_label
     if current_image_number <= IMAGE_NUM-1:
         current_image_number = IMAGE_NUM-1
         # 刪除畫面上現有的物件
@@ -117,10 +120,13 @@ def show_res_btn():
         # 因為直接顯示結果了，店名跟評分進度都不需要
         progress_label.destroy()
         res_label.destroy()
+        # 顯示一下結果
+        show_result()
+        progress_bar.destroy()
+        res_uploading_label.destroy()
         res_final_label = tk.Label(my_canvas,font=("Purisa", 20), text="最終結果", fg="red")
         res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
-        # 顯示一下結果
-        show_result(read_data())
+
     else:
         show_message_already_show_res()
 
@@ -137,9 +143,19 @@ def show_message_already_show_res():
     tkmb.showinfo("Output", info_message)
 
 
-# def new_can():
-#     first_canvas = tk.Canvas(root, width=w, height=h, bg="white")
-#     first_canvas.pack(pady=20)
+def progress_bar_running():
+    global progress_bar, res_uploading_label
+    res_uploading_label = tk.Label(my_canvas, font=("Purisa", 20), text="計算最終結果中...", fg="red")
+    res_uploading_label.place(rely=.5, relx=0.5, x=-75, y=-45, anchor=tk.NW)
+    progress_bar = ttk.Progressbar(my_canvas, orient="horizontal", length=250, mode="determinate")
+    progress_bar.place(rely=.5, relx=.5, x=125, y=0, anchor=tk.SE)
+    progress_bar['maximum'] = 100
+    for i in range(101):
+        time.sleep(0.05)
+        progress_bar["value"] = i
+        progress_bar.update()
+        progress_bar["value"] = 0
+
 
 
 # 設定圖檔路徑
