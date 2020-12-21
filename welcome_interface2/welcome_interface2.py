@@ -91,7 +91,7 @@ tk.Radiobutton(question_frame, text='公館商圈', font=('黑體-繁', 15), var
 tk.Radiobutton(question_frame, text='118巷', font=('黑體-繁', 15), variable=place_var, value='118巷', pady=5).grid(column=2, row=3,
                                                                                                        sticky=tk.W)
 
-enter_btn = tk.Button(window, text='進入遊戲', font=('黑體-繁', 16), bg='black', fg='#1D7381', width=10, height=3,
+enter_btn = tk.Button(window, text='開始評分', font=('黑體-繁', 16), bg='black', fg='#1D7381', width=10, height=3,
                       activeforeground='red',
                       command=lambda: [get_information(), create_new_window()])
 enter_btn.pack()
@@ -105,6 +105,6 @@ canvas.create_image(350, -230, image=photo)
 photo.side = tk.CENTER
 canvas.pack()
 
-enter_btn = tk.Button(window, text='進入遊戲', command=lambda: [get_information(), create_new_window()])
+enter_btn = tk.Button(window, text='開始評分', command=lambda: [get_information(), create_new_window()])
 enter_btn.pack()
 window.mainloop()
