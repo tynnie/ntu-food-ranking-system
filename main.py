@@ -3,11 +3,12 @@ import tkinter.font as tkfont
 import tkinter.messagebox as tkmb
 import tkinter.ttk as ttk
 from PIL import ImageTk, Image
-import time
+from sqlalchemy import create_engine
 import pandas as pd
-import pygsheets
+import time
 import csv
 
+DB_PATH = "/ref/sql/data_test1.db"
 WINDOW_W = None  # The width of the window
 WINDOW_H = None  # The height of the window
 INIT_X = None  # The initial x coordinate of the object
@@ -16,16 +17,18 @@ item_pad = 90  # the padding of the objects on the canvas
 usr_data = []  # Record usr info
 res_img_record = []  # Record img info of the objects on the canvas
 data = []  # Record the ranking results
-final_res = []
+final_res = []  # Save the final results of different filter conditions
 xpos = 0  # x coordinate of the object
 ypos = 0  # y coordinate of the object
-current_player = 0  # Record usr name
-current_image_number = 0  # The order of the object
+current_player = 0  # Record username
+finish = False  # Check if the user has completed all ranking tasks
+skip = False  # Check if the user has skipped all ranking tasks
+current_image_number = 0  # Current order of ranking tasks
 
 # Get the path of all restaurant pics
-IMAGE_PATH = "ref/img/"
+IMAGE_FILE_PATH = "ref/img/"
 IMAGE_NUM = 20
-images = ["".join([IMAGE_PATH, str(n), ".png"]) for n in range(1, IMAGE_NUM+1)]
+images = ["".join([IMAGE_FILE_PATH, str(n), ".png"]) for n in range(1, IMAGE_NUM+1)]
 
 # Get the list of restaurants
 with open("ref/restaurant_list.csv") as f:
@@ -86,16 +89,16 @@ class StartPage(tk.Frame):
         self.label = tk.Label(self, text="NTU 校園美食評分", font=controller.title_font, fg='#3D7F47')
         self.label.grid(row=0, pady=(100, 14), padx=INIT_X - 30, sticky=tk.NW)
         # Set the name input field
-        self.name_label = tk.Label(self, text='姓名 : ', font=controller.label_font)
+        self.name_label = tk.Label(self, text='使用者名稱 : ', font=controller.label_font)
         self.name_label.grid(row=1, pady=(30, 6), padx=INIT_X - 110, sticky=tk.NW)
         self.name_entry = tk.Entry(self)
-        self.name_entry.grid(row=1, pady=(30, 6), padx=INIT_X - 30, sticky=tk.NW)
+        self.name_entry.grid(row=1, pady=(36, 6), padx=INIT_X + 25, sticky=tk.NW)
         # Set the age input field
         self.age_label = tk.Label(self, text='年級 : ', font=controller.label_font)
         self.age_label.grid(row=2, pady=6, padx=INIT_X - 110, sticky=tk.NW)
         self.age_box = ttk.Combobox(self, state='readonly',
                                font=controller.note_font, values=['大一', '大二', '大三', '大四', '碩士', '博士'])
-        self.age_box.grid(row=2, pady=6, padx=INIT_X - 30, sticky=tk.NW)  # TODO 想一下怎麼讓樣式比較好看
+        self.age_box.grid(row=2, pady=6, padx=INIT_X - 30, sticky=tk.NW)
         self.age_box.current(0)
         # Set the gender input field
         self.gender_label = tk.Label(self, text='性別 : ', font=controller.label_font)
@@ -113,7 +116,7 @@ class StartPage(tk.Frame):
                                       values=['文學院', '工學院', '管理學院', '社會科學院',
                                               '理學院', '醫學院', '法律學院', '公共衛生學院', '商學院',
                                               '生命科學院', '電機資訊學院', '生物資源暨農學院', '其他'])
-        self.department_box.grid(row=4, pady=6, padx=INIT_X - 30, sticky=tk.NW)  # TODO 想一下怎麼讓樣式比較好看
+        self.department_box.grid(row=4, pady=6, padx=INIT_X - 30, sticky=tk.NW)
         self.department_box.current(0)
         # Set the budget input field
         self.budget_label = tk.Label(self, text='平均每餐的預算（元） : ', font=controller.label_font)
@@ -162,7 +165,7 @@ class StartPage(tk.Frame):
         info = ImageTk.PhotoImage(Image.open("ref/info.png"))
         info_img = tk.Label(new_window, image=info)
         info_img.image = info  # keep a reference!
-        info_img.grid(row=2, pady=(0, 0), padx=170, sticky=tk.NW)  # TODO 有空再做一個離開的 btn
+        info_img.grid(row=2, pady=(0, 0), padx=170, sticky=tk.NW)
 
     def get_information(self):
         global current_player, usr_data
@@ -173,11 +176,24 @@ class StartPage(tk.Frame):
                     self.department_box.get(),
                     self.budget_var.get(),
                     self.place_var.get()]
+        # check if input is empty
         if self.name_entry.get() == "":
-            PageOne.show_message(self, "請輸入姓名")
+            PageOne.show_message(self, "請輸入使用者名稱")
+        # check if username is used
+        elif self.name_entry.get() in self.same_usr_name():
+            PageOne.show_message(self, "請輸入其他使用者名稱")
         else:
-            # PageOne.upload_data(usr_data, 'usr', ["name", "age", "gender", "department", "budget", "place"])
+            usr_data_df = pd.DataFrame(usr_data).transpose()
+            usr_data_df.columns = ["name", "age", "gender", "department", "budget", "place"]
+            PageOne.upload_data(usr_data_df, table_name="usr")
             self.controller.show_frame("PageOne")
+
+    def same_usr_name(self):
+        """Get all username in DB"""
+        df = pd.read_sql_query('SELECT * FROM usr', PageOne.connect_db())
+        name_list = df["name"].to_list()
+        return name_list
+
 
 
 class PageOne(tk.Frame):
@@ -206,15 +222,15 @@ class PageOne(tk.Frame):
         button_save = tk.Button(self.my_canvas, font=controller.note_font,
                                 fg='#1D7381', width=15, height=2, activeforeground='red',
                                 text="提交餐廳評分", command=self.submit_btn)
-        button_save.place(rely=1.0, relx=1.0, x=-720, y=-50, anchor=tk.SE)
+        button_save.place(rely=1.0, relx=1.0, x=-785, y=-50, anchor=tk.SE)
         button_skip = tk.Button(self.my_canvas, font=controller.note_font,
                                 fg='#1D7381', width=10, height=2, activeforeground='red',
                                 text="跳過餐廳", command=self.submit_btn)
-        button_skip.place(rely=1.0, relx=1.0, x=-610, y=-50, anchor=tk.SE)
+        button_skip.place(rely=1.0, relx=1.0, x=-665, y=-50, anchor=tk.SE)
         button_quit = tk.Button(self.my_canvas, font=controller.note_font,
-                                fg='#1D7381', width=18, height=2, activeforeground='red',
-                                text="直接看評分結果", command=self.show_res_btn)
-        button_quit.place(rely=1.0, relx=1.0, x=-420, y=-50, anchor=tk.SE)
+                                fg='#1D7381', width=22, height=2, activeforeground='red',
+                                text="直接看其他人的評分結果", command=self.show_res_btn)
+        button_quit.place(rely=1.0, relx=1.0, x=-425, y=-50, anchor=tk.SE)
         button_quit = tk.Button(self.my_canvas, font=controller.note_font,
                                 fg='#1D7381', width=6, height=2, activeforeground='red',
                                 text="結束", command=controller.destroy)
@@ -239,17 +255,22 @@ class PageOne(tk.Frame):
         xpos = event.x
         ypos = event.y
 
+    # def skip_item(self):
+    #     """Record skip item"""
+    #     global skip
+    #     skip = True
+
     def submit_btn(self):
         """
         Define different click events:
         - Ranking process is not completed -> continue processing
         - Ranking process is completed -> show completed message
         """
-        global current_image_number, xpos, ypos, current_player
+        global current_image_number, xpos, ypos, current_player, finish,skip
         if current_image_number <= IMAGE_NUM-1:  # Ranking process is not completed
             # Record current results
             if (xpos == 0) and (ypos == 0):
-                xpos, ypos = INIT_X, INIT_Y
+                xpos, ypos = INIT_X-30, INIT_Y-30
             item = [current_player, str(restaurant[current_image_number][0]), xpos, ypos]
             data.append(item)
             # Reset the coordinates
@@ -257,9 +278,16 @@ class PageOne(tk.Frame):
             ypos = 0
             # If the ranking process is completed, upload and show the results
             if current_image_number == IMAGE_NUM-1:
-                # self.upload_data(data, 'data', ["name", "index", "x", "y"])
+                data_df = pd.DataFrame(data)
+                data_df.columns = ["name", "index", "x", "y"]
+                self.upload_data(data_df, table_name="ranking")
+                finish = True
+                if tuple(set([tuple(d[2:]) for d in data])) == ((INIT_X-30, INIT_Y-30),):
+                    skip = True
                 self.show_result()
                 current_image_number += 1
+
+
 
             # If the ranking process is not completed, continue processing
             else:
@@ -278,35 +306,23 @@ class PageOne(tk.Frame):
             self.show_message("所有餐廳已完成評分")
 
     @classmethod
-    def connect_db(self, table_name):
-        """Connect the Google spreadsheet"""
-        gc = pygsheets.authorize(service_file='ref/client_secret.json')  # Don't share the secret.json on GitHub
-        sh = gc.open('NTU_ranking')
-        wks = sh[0]
-        wks = sh.worksheet_by_title(table_name)
-        cells = wks.get_all_values(include_tailing_empty_rows=False, include_tailing_empty=False, returnas='matrix')
-        return wks, cells
+    # def connect_db(self, table_name):
+    def connect_db(self):
+
+        con = create_engine("sqlite://" + DB_PATH)
+        return con
 
     @classmethod
-    def upload_data(self, d, table_name, col):
-        """Upload data to Google spreadsheet"""
-        last_row = len(self.connect_db(table_name)[1])
-        wks = self.connect_db(table_name)[0]
-
-        if len(wks.get_as_df()) == 0:
-            wks.insert_rows(row=0, number=1, values=col)
-            wks.insert_rows(last_row, number=1, values=d)
-        else:
-            wks.insert_rows(last_row, number=1, values=d)
+    def upload_data(self, d, table_name):
+        """Insert data into the database"""
+        d.to_sql(table_name, self.connect_db(), if_exists='append', index=False)
 
     def read_data(self):
         """Fetch data from Google spreadsheet"""
         global final_res
         self.progress_bar_running()
-        wks1 = self.connect_db(table_name='data')[0]
-        df1 = wks1.get_as_df()
-        wks2 = self.connect_db(table_name='usr')[0]
-        df2 = wks2.get_as_df()
+        df1 = pd.read_sql_query('SELECT * FROM ranking', self.connect_db())
+        df2 = pd.read_sql_query('SELECT * FROM usr', self.connect_db())
         # Get the average value of xy coordinates
         df_main = df1.groupby(['index']).mean().reset_index()
         df_m = df1.join(df2.set_index('name'), on='name')
@@ -317,12 +333,13 @@ class PageOne(tk.Frame):
         df_budget_f = df_budget[df_budget["budget"] == 1]
         df_place = df_m.groupby(['index', "place"]).mean().reset_index()
         df_place_f = df_place[df_place["place"] == 2]
-        final_res = [df_place_f, df_budget_f, df_age_f, df_age_f2]
+        df_my_ans = df_m[df_m["name"] == current_player]
+        final_res = [df_place_f, df_budget_f, df_age_f, df_age_f2, df_my_ans]
         return df_main
 
     def show_result(self):
         """Show final ranking result"""
-        global res_img_record
+        global res_img_record, finish, skip
         # Del current object
         self.my_canvas.delete("progress")
         self.my_canvas.delete(self.my_image)
@@ -344,6 +361,37 @@ class PageOne(tk.Frame):
             photoimg = ImageTk.PhotoImage(res_img)
             images.append(photoimg)  # Keep the reference
             res_img_record.append(self.my_canvas.create_image(int(line["x"]), int(line["y"]), anchor=tk.NW, image=photoimg))
+        # See different results
+        self.filter_var = tk.IntVar(self)
+        filter_position = 90
+        if (finish is True) and (skip is False):
+            self.filter_my = tk.Radiobutton(self, text='我的答案',
+                                           font=self.controller.label_font, variable=self.filter_var, value=4,
+                                           command=lambda: self.filter_btn(final_res[4]))
+            self.filter_my.place(rely=.035, relx=0.0, x=50, y=filter_position, anchor=tk.NW)
+            filter_position += 40
+        self.filter_label = tk.Label(self, text='看其他人 : ', font=self.controller.label_font)
+        self.filter_label.place(rely=.035, relx=0.0, x=50, y=filter_position, anchor=tk.NW)
+
+        self.filter_1 = tk.Radiobutton(self, text='公館人',
+                                       font=self.controller.label_font,
+                                       variable=self.filter_var, value=0,
+                                       command=lambda: self.filter_btn(final_res[0]))
+        self.filter_1.place(rely=.035, relx=0.0, x=50, y=filter_position+35, anchor=tk.NW)
+        self.filter_2 = tk.Radiobutton(self, text='小資族',
+                                       font=self.controller.label_font, variable=self.filter_var, value=1,
+                                       command=lambda: self.filter_btn(final_res[1]))
+        self.filter_2.place(rely=.035, relx=0.0, x=50, y=filter_position+70, anchor=tk.NW)
+        self.filter_3 = tk.Radiobutton(self, text='大一新生',
+                                       font=self.controller.label_font, variable=self.filter_var, value=2,
+                                       command=lambda: self.filter_btn(final_res[2]))
+        self.filter_3.place(rely=.035, relx=0.0, x=50, y=filter_position+105, anchor=tk.NW)
+        self.filter_4 = tk.Radiobutton(self, text='大四老屁股',
+                                       font=self.controller.label_font, variable=self.filter_var, value=3,
+                                       command=lambda: self.filter_btn(final_res[3]))
+        self.filter_4.place(rely=.035, relx=0.0, x=50, y=filter_position+140, anchor=tk.NW)
+
+        self.filter_var.set(-1)
 
     def show_res_btn(self):
         """
@@ -366,30 +414,8 @@ class PageOne(tk.Frame):
             # Del the progress bar
             self.progress_bar.destroy()
             self.res_uploading_label.destroy()
-            res_final_label = tk.Label(self.my_canvas, font=self.controller.label_font, text="最終結果", fg="red")
+            res_final_label = tk.Label(self.my_canvas, font=self.controller.label_font, text="所有人的評分結果", fg="red")
             res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
-            # Set the place input field
-            self.filter_label = tk.Label(self, text='看其他人 : ', font=self.controller.label_font)
-            self.filter_label.place(rely=.035, relx=0.0, x=50, y=90, anchor=tk.NW)
-            self.filter_var = tk.IntVar(self)
-            self.filter_1 = tk.Radiobutton(self, text='公館人',
-                                           font=self.controller.label_font,
-                                           variable=self.filter_var, value=0,
-                                           command=lambda: self.filter_btn(final_res[0]))
-            self.filter_1.place(rely=.035, relx=0.0, x=50, y=130, anchor=tk.NW)
-            self.filter_2 = tk.Radiobutton(self, text='小資族',
-                                           font=self.controller.label_font, variable=self.filter_var, value=1,
-                                           command=lambda: self.filter_btn(final_res[1]))
-            self.filter_2.place(rely=.035, relx=0.0, x=50, y=160, anchor=tk.NW)
-            self.filter_3 = tk.Radiobutton(self, text='大一新生',
-                                           font=self.controller.label_font, variable=self.filter_var, value=2,
-                                           command=lambda: self.filter_btn(final_res[2]))
-            self.filter_3.place(rely=.035, relx=0.0, x=50, y=190, anchor=tk.NW)
-            self.filter_4 = tk.Radiobutton(self, text='大四老屁股',
-                                           font=self.controller.label_font, variable=self.filter_var, value=3,
-                                           command=lambda: self.filter_btn(final_res[3]))
-            self.filter_4.place(rely=.035, relx=0.0, x=50, y=220, anchor=tk.NW)
-            self.filter_var.set(-1)
 
         else:
             self.show_message("已顯示最終結果")
@@ -423,8 +449,8 @@ class PageOne(tk.Frame):
         self.res_uploading_label.place(rely=.5, relx=0.5, x=-220, y=-50, anchor=tk.NW)
         self.progress_bar = ttk.Progressbar(self.my_canvas, orient="horizontal", length=250, mode="determinate")
         self.progress_bar.place(rely=.5, relx=.5, x=-15, y=0, anchor=tk.SE)
-        self.progress_bar['maximum'] = 100
-        for i in range(101):
+        self.progress_bar['maximum'] = 60
+        for i in range(61):
             time.sleep(0.05)
             self.progress_bar["value"] = i
             self.progress_bar.update()
