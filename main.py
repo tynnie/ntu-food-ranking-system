@@ -2,28 +2,29 @@ import tkinter as tk
 import tkinter.font as tkfont
 import tkinter.messagebox as tkmb
 import tkinter.ttk as ttk
-from PIL import ImageTk, Image
-from sqlalchemy import create_engine
-import pandas as pd
 import time
 import csv
+from PIL import ImageTk, Image
+from sqlalchemy import create_engine, exc
+import pandas as pd
+
 
 DB_PATH = "/ref/sql/result.db"
 WINDOW_W = float()  # The width of the window
 WINDOW_H = float()  # The height of the window
 INIT_X = float()  # The initial x coordinate of the object
 INIT_Y = float()  # The initial y coordinate of the object
-item_pad = 90  # the padding of the objects on the canvas
+ITEM_PADDING = 90  # the padding of the objects on the canvas
 usr_data = []  # Record usr info
 res_img_record = []  # Record img info of the objects on the canvas
 data = []  # Record the ranking results
 final_res = []  # Save the final results of different filter conditions
-x_pos = 0  # x coordinate of the object
-y_pos = 0  # y coordinate of the object
-current_player = 0  # Record username
-finish = False  # Check if the user has completed all ranking tasks
-skip = False  # Check if the user has skipped all ranking tasks
-current_image_number = 0  # Current order of ranking tasks
+X_POS = 0  # x coordinate of the object
+Y_POS = 0  # y coordinate of the object
+CURRENT_PLAYER = 0  # Record username
+FINISH = False  # Check if the user has completed all ranking tasks
+SKIP = False  # Check if the user has skipped all ranking tasks
+CURRENT_IMG_NUMBER = 0  # Current order of ranking tasks
 
 # Get the path of all restaurant pics
 IMAGE_FILE_PATH = "ref/img/"
@@ -204,7 +205,7 @@ class StartPage(tk.Frame):
         try:
             all_usr_name_df = pd.read_sql_query('SELECT * FROM usr', Application.connect_db())
             self.all_usr_name = all_usr_name_df["name"].to_list()
-        except:
+        except exc.OperationalError:
             pass
 
     def info_window(self):
@@ -216,8 +217,8 @@ class StartPage(tk.Frame):
         info_img.grid(row=2, pady=(0, 0), padx=170, sticky=tk.NW)
 
     def get_information(self):
-        global current_player, usr_data
-        current_player = self.name_entry.get()
+        global CURRENT_PLAYER, usr_data
+        CURRENT_PLAYER = self.name_entry.get()
         usr_data = [self.name_entry.get(),
                     self.age_box.get(),
                     self.gender_var.get(),
@@ -242,7 +243,7 @@ class StartPage(tk.Frame):
 class PageOne(tk.Frame):
 
     def __init__(self, parent, controller):
-        global WINDOW_W, WINDOW_H, INIT_X, INIT_Y, item_pad
+        global WINDOW_W, WINDOW_H, INIT_X, INIT_Y, ITEM_PADDING
         tk.Frame.__init__(self, parent)
         self.controller = controller
 
@@ -253,13 +254,13 @@ class PageOne(tk.Frame):
         # Set the coordinates axis and title
         self.my_canvas.create_line(150, INIT_Y, WINDOW_W - 150, INIT_Y, fill="gray", width=5)
         self.my_canvas.create_line(INIT_X, 125, INIT_X, WINDOW_H - 125, fill="gray", width=5)
-        self.my_canvas.create_text(item_pad, INIT_Y, fill="Gray",
+        self.my_canvas.create_text(ITEM_PADDING, INIT_Y, fill="Gray",
                                    font=controller.label_font, text="難吃")
-        self.my_canvas.create_text(WINDOW_W - item_pad, INIT_Y,
+        self.my_canvas.create_text(WINDOW_W - ITEM_PADDING, INIT_Y,
                                    fill="Gray", font=controller.label_font, text="好吃")
-        self.my_canvas.create_text(INIT_X, item_pad,
+        self.my_canvas.create_text(INIT_X, ITEM_PADDING,
                                    fill="Gray", font=controller.label_font, text="健康")
-        self.my_canvas.create_text(INIT_X, WINDOW_H - item_pad,
+        self.my_canvas.create_text(INIT_X, WINDOW_H - ITEM_PADDING,
                                    fill="Gray", font=controller.label_font, text="不健康")
 
         # Set first img
@@ -291,19 +292,19 @@ class PageOne(tk.Frame):
         self.res_label = tk.Label(self.my_canvas, text="", fg="black")
         self.res_label.place(rely=.07, relx=0.0, x=50, y=0, anchor=tk.NW)
         self.progress_label.config(font=controller.label_font,
-                                   text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+                                   text="已評分或跳過的餐廳：" + str(CURRENT_IMG_NUMBER) + " / 20")
         self.res_label.config(font=controller.label_font,
-                              text="目前評分餐廳：" + restaurant[current_image_number][1])
+                              text="目前評分餐廳：" + restaurant[CURRENT_IMG_NUMBER][1])
         # Make objects on the canvas movable
         self.my_canvas.bind("<B1-Motion>", self.move)
 
     def move(self, event):
         """Use the mouse to display the object and get the coordinates"""
-        global x_pos, y_pos
-        self.img = tk.PhotoImage(file=images[current_image_number])
+        global X_POS, Y_POS
+        self.img = tk.PhotoImage(file=images[CURRENT_IMG_NUMBER])
         self.my_image = self.my_canvas.create_image(event.x, event.y, image=self.img)
-        x_pos = event.x
-        y_pos = event.y
+        X_POS = event.x
+        Y_POS = event.y
 
     def submit_btn(self):
         """
@@ -311,42 +312,42 @@ class PageOne(tk.Frame):
         - The ranking process is not yet complete -> continue processing
         - The ranking process is complete -> show message
         """
-        global INIT_X, INIT_Y, current_image_number,\
-            x_pos, y_pos, current_player, finish, skip
-        if current_image_number <= IMAGE_NUM - 1:
+        global INIT_X, INIT_Y, CURRENT_IMG_NUMBER,\
+            X_POS, Y_POS, CURRENT_PLAYER, FINISH, SKIP
+        if CURRENT_IMG_NUMBER <= IMAGE_NUM - 1:
             # Record current results
-            if (x_pos == 0) and (y_pos == 0):
-                x_pos, y_pos = INIT_X - 32.5, INIT_Y - 32.5
-            item = [current_player, str(restaurant[current_image_number][0]), x_pos, y_pos]
+            if (X_POS == 0) and (Y_POS == 0):
+                X_POS, Y_POS = INIT_X - 32.5, INIT_Y - 32.5
+            item = [CURRENT_PLAYER, str(restaurant[CURRENT_IMG_NUMBER][0]), X_POS, Y_POS]
             data.append(item)
             # Reset the coordinates
-            x_pos = 0
-            y_pos = 0
+            X_POS = 0
+            Y_POS = 0
             # If the ranking process is complete, upload and show the results
-            if current_image_number == IMAGE_NUM - 1:
+            if CURRENT_IMG_NUMBER == IMAGE_NUM - 1:
                 data_df = pd.DataFrame(data)
                 data_df.columns = ["name", "index", "x", "y"]
                 Application.upload_data(data_df, table_name="ranking")
                 # Add the "finish" tag because the ranking process has been finished
-                finish = True
+                FINISH = True
                 # If the user has not ranked any restaurants, add the "skip" tag
                 if tuple(set([tuple(d[2:]) for d in data])) == ((INIT_X - 32.5, INIT_Y - 32.5),):
-                    skip = True
+                    SKIP = True
                 self.show_result()
-                current_image_number += 1
+                CURRENT_IMG_NUMBER += 1
 
             # If the ranking process is not yet complete, continue processing
             else:
-                current_image_number += 1
+                CURRENT_IMG_NUMBER += 1
                 # del current object
                 self.my_canvas.delete("progress")
                 self.my_canvas.delete(self.my_image)
                 # update processing progress
                 self.progress_label.config(font=self.controller.label_font,
-                                           text="已評分或跳過的餐廳：" + str(current_image_number) + " / 20")
+                                           text="已評分或跳過的餐廳：" + str(CURRENT_IMG_NUMBER) + " / 20")
                 self.res_label.config(font=self.controller.label_font,
-                                      text="目前評分餐廳：" + restaurant[current_image_number][1])
-                self.img = tk.PhotoImage(file=images[current_image_number])
+                                      text="目前評分餐廳：" + restaurant[CURRENT_IMG_NUMBER][1])
+                self.img = tk.PhotoImage(file=images[CURRENT_IMG_NUMBER])
                 self.my_image = self.my_canvas.create_image(INIT_X - 90,
                                                             INIT_Y - 90, anchor=tk.NW, image=self.img)
         else:
@@ -373,13 +374,13 @@ class PageOne(tk.Frame):
         df_place = df_m.groupby(['index', "place"]).mean().reset_index()
         df_place_f = df_place[df_place["place"] == 2]
         # Filter by current user
-        df_my_ans = df_m[df_m["name"] == current_player]
+        df_my_ans = df_m[df_m["name"] == CURRENT_PLAYER]
         final_res = [df_place_f, df_budget_f, df_age_f, df_age_f2, df_my_ans, df_main]
         return df_main
 
     def show_result(self):
         """Show final ranking result"""
-        global res_img_record, finish, skip
+        global res_img_record, FINISH, SKIP
         # Del current object
         self.my_canvas.delete("progress")
         self.my_canvas.delete(self.my_image)
@@ -394,7 +395,7 @@ class PageOne(tk.Frame):
         for index, line in df.iterrows():
             # Show all img on the canvas
             res_final_label = tk.Label(self.my_canvas,
-                                       font=self.controller.label_font, text="所有人的評分結果", fg="red")
+                                       font=self.controller.label_font, text="最終評分結果", fg="red")
             res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
             res_img_path = images[int(line["index"]) - 1]
             res_img = Image.open(res_img_path).resize((75, 75))
@@ -406,7 +407,7 @@ class PageOne(tk.Frame):
         # See different results
         self.filter_var = tk.IntVar(self)
         filter_position = 90
-        if (finish is True) and (skip is False):
+        if (FINISH is True) and (SKIP is False):
             self.filter_my = tk.Radiobutton(self, text='我的答案',
                                             font=self.controller.label_font,
                                             variable=self.filter_var, value=4,
@@ -451,9 +452,9 @@ class PageOne(tk.Frame):
         - Final ranking results are not yet displayed -> continue processing
         - Final ranking results are displayed -> show message
         """
-        global current_image_number, final_res
-        if current_image_number <= IMAGE_NUM - 1:
-            current_image_number = IMAGE_NUM - 1
+        global CURRENT_IMG_NUMBER, final_res
+        if CURRENT_IMG_NUMBER <= IMAGE_NUM - 1:
+            CURRENT_IMG_NUMBER = IMAGE_NUM - 1
             # Del current object
             self.my_canvas.delete("progress")
             self.my_canvas.delete(self.my_image)
@@ -462,13 +463,13 @@ class PageOne(tk.Frame):
             self.res_label.destroy()
             # Display the final ranking result
             self.show_result()
-            current_image_number += 1
+            CURRENT_IMG_NUMBER += 1
             # Del the progress bar
             self.progress_bar.destroy()
             self.res_uploading_label.destroy()
             res_final_label = tk.Label(self.my_canvas,
                                        font=self.controller.label_font,
-                                       text="所有人的評分結果", fg="red")
+                                       text="最終評分結果", fg="red")
             res_final_label.place(rely=.035, relx=0.0, x=50, y=0, anchor=tk.NW)
 
         else:
