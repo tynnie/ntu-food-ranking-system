@@ -211,6 +211,7 @@ class StartPage(tk.Frame):
     def info_window(self):
         """Show the instructions"""
         new_window = tk.Toplevel(self)
+        new_window.title("玩法說明")
         info = ImageTk.PhotoImage(Image.open("ref/info.png"))
         info_img = tk.Label(new_window, image=info)
         info_img.image = info  # keep a reference
